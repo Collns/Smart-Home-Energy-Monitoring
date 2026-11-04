@@ -1,0 +1,5 @@
+// Table panel: latest alerts
+Alerts
+| where $__timeFilter(ts)
+| order by ts desc
+| take 50

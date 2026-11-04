@@ -1,0 +1,16 @@
+// Run in the ADX web UI (dataexplorer.azure.com) against database SmartHomeEnergy.  OWNER: Part 3
+// Run each command separately (select it and press Shift+Enter).
+
+.create table PowerRaw (
+    ts: datetime, device_id: string, room: string, appliance: string,
+    seq: long, power_w: real, voltage_v: real, current_a: real)
+
+.create table PowerRaw ingestion json mapping "PowerRawMapping"
+'[{"column":"ts","Properties":{"Path":"$.ts"}},{"column":"device_id","Properties":{"Path":"$.device_id"}},{"column":"room","Properties":{"Path":"$.room"}},{"column":"appliance","Properties":{"Path":"$.appliance"}},{"column":"seq","Properties":{"Path":"$.seq"}},{"column":"power_w","Properties":{"Path":"$.power_w"}},{"column":"voltage_v","Properties":{"Path":"$.voltage_v"}},{"column":"current_a","Properties":{"Path":"$.current_a"}}]'
+
+.create table Alerts (
+    ts: datetime, appliance: string, type: string, severity: string,
+    value: real, message: string)
+
+.create table Alerts ingestion json mapping "AlertsMapping"
+'[{"column":"ts","Properties":{"Path":"$.ts"}},{"column":"appliance","Properties":{"Path":"$.appliance"}},{"column":"type","Properties":{"Path":"$.type"}},{"column":"severity","Properties":{"Path":"$.severity"}},{"column":"value","Properties":{"Path":"$.value"}},{"column":"message","Properties":{"Path":"$.message"}}]'

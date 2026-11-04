@@ -1,0 +1,5 @@
+// Gauge panel: latest watts per appliance
+PowerRaw
+| where ts > ago(2m)
+| summarize arg_max(ts, power_w) by appliance
+| project appliance, power_w

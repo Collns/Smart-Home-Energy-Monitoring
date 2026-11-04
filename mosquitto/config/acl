@@ -1,0 +1,14 @@
+# Topic ACLs.  OWNER: Part 1
+# Plug usernames = appliance name (refrigerator, microwave, ...)
+
+# Each plug may only write its own topics
+pattern write home/+/%u/power
+pattern write home/+/%u/status
+
+user processor
+topic read home/+/+/power
+topic read home/+/+/status
+topic write home/alerts
+
+user monitor
+topic read home/#

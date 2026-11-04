@@ -1,0 +1,5 @@
+// Stacked bar: kWh per appliance per day (use $__timeFilter in Grafana)
+EnergyHourly
+| where $__timeFilter(ts)
+| summarize kwh = sum(avg_w) / 1000.0 by appliance, day = bin(ts, 1d)
+| order by day asc

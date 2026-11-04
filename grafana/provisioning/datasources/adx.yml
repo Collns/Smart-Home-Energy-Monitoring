@@ -1,0 +1,16 @@
+# ADX data source, auto-provisioned.  OWNER: Part 3
+# Values come from .env. If the plugin version expects different field names,
+# set it up once in the UI and copy the fields here.
+apiVersion: 1
+datasources:
+  - name: Azure Data Explorer
+    type: grafana-azure-data-explorer-datasource
+    access: proxy
+    isDefault: true
+    jsonData:
+      clusterUrl: ${ADX_CLUSTER_URI}
+      tenantId: ${AZURE_TENANT_ID}
+      clientId: ${ADX_GRAFANA_CLIENT_ID}
+      defaultDatabase: ${ADX_DATABASE}
+    secureJsonData:
+      clientSecret: ${ADX_GRAFANA_CLIENT_SECRET}

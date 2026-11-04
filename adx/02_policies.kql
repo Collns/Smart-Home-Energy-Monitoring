@@ -1,0 +1,12 @@
+// Retention + streaming ingestion.  OWNER: Part 3
+// Streaming ingestion must ALSO be turned on at cluster level
+// (Azure portal -> cluster -> Configurations -> Streaming ingestion: On).
+// TODO Part 3: confirm your cluster tier supports streaming ingestion.
+
+.alter-merge table PowerRaw policy retention softdelete = 30d recoverability = disabled
+
+.alter-merge table Alerts policy retention softdelete = 365d
+
+.alter table PowerRaw policy streamingingestion enable
+
+.alter table Alerts policy streamingingestion enable
