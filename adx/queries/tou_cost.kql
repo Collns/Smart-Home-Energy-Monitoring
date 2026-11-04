@@ -1,0 +1,16 @@
+// Estimated cost at Ontario time-of-use prices.
+// TODO Part 3: check current OEB rates and hours (they change every Nov 1)
+// and add the summer schedule + statutory holidays.
+let off_peak = 0.0;   // $/kWh  <- fill in from oeb.ca
+let mid_peak = 0.0;
+let on_peak  = 0.0;
+EnergyHourly
+| where $__timeFilter(ts)
+| extend local = datetime_utc_to_local(ts, "America/Toronto")
+| extend h = hourofday(local), weekend = dayofweek(local) >= 6d
+| extend rate = case(
+        weekend, off_peak,
+        h >= 7 and h < 11 or h >= 17 and h < 19, on_peak,   // winter schedule
+        h >= 11 and h < 17, mid_peak,
+        off_peak)
+| summarize cost = sum(avg_w / 1000.0 * rate) by appliance

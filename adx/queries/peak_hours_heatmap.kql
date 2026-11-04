@@ -1,0 +1,5 @@
+// Heatmap: average kWh by hour of day and appliance
+EnergyHourly
+| where $__timeFilter(ts)
+| summarize kwh = avg(avg_w) / 1000.0 by hour = hourofday(ts), appliance
+| order by hour asc

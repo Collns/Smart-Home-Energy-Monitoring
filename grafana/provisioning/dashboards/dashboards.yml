@@ -1,0 +1,10 @@
+# Loads every dashboard JSON in grafana/dashboards/.  OWNER: Part 3
+# Workflow: build the dashboard in the Grafana UI -> Share -> Export -> save JSON
+# into grafana/dashboards/energy.json and commit it.
+apiVersion: 1
+providers:
+  - name: smart-home
+    folder: Smart Home Energy
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards

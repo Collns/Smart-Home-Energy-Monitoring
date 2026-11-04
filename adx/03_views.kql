@@ -1,0 +1,18 @@
+// Roll-ups as materialized views (kept 1 year).  OWNER: Part 3
+// Energy: average watts over one hour / 1000 = kWh for that hour.
+
+.create materialized-view with (backfill=true) Power1m on table PowerRaw
+{
+    PowerRaw
+    | summarize avg_w = avg(power_w) by room, appliance, ts = bin(ts, 1m)
+}
+
+.create materialized-view with (backfill=true) EnergyHourly on table PowerRaw
+{
+    PowerRaw
+    | summarize avg_w = avg(power_w), samples = count() by room, appliance, ts = bin(ts, 1h)
+}
+
+.alter-merge materialized-view Power1m policy retention softdelete = 365d
+
+.alter-merge materialized-view EnergyHourly policy retention softdelete = 365d
