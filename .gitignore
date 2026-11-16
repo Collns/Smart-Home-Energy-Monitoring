@@ -1,0 +1,22 @@
+# Secrets - never commit
+.env
+mosquitto/config/passwd
+mosquitto/certs/*
+!mosquitto/certs/.gitkeep
+
+# Runtime data
+data/*
+!data/.gitkeep
+processor/anomaly/models/*
+!processor/anomaly/models/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
