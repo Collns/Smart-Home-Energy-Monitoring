@@ -3,7 +3,7 @@
 ThresholdTracker.check(reading) -> alert dict | None
 An alert fires when an appliance stays above its limit for `duration`.
 """
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 # appliance: (watts limit, sustained duration)
 THRESHOLDS = {
@@ -46,3 +46,37 @@ def make_alert(r, kind, severity, message):
         "value": r["power_w"],
         "message": message,
     }
+
+
+class StatusTracker:
+    """Turns home/{room}/{appliance}/status messages into offline alerts.
+
+    The simulator sets a retained Last Will of "offline", so the broker publishes it
+    when a plug drops without disconnecting cleanly. We only alert on a change
+    (online -> offline), so a repeated or retained "offline" doesn't fire twice.
+    """
+
+    def __init__(self):
+        self.last = {}             # appliance -> "online" / "offline"
+
+    def check(self, topic, payload, now=None):
+        parts = topic.split("/")
+        if len(parts) != 4:
+            return None
+        appliance = parts[2]
+        status = payload.strip().lower()
+        if status not in ("online", "offline"):
+            return None
+        prev = self.last.get(appliance)
+        self.last[appliance] = status
+        if status == "offline" and prev != "offline":
+            now = now or datetime.now(timezone.utc)
+            return {
+                "ts": now.isoformat().replace("+00:00", "Z"),
+                "appliance": appliance,
+                "type": "offline",
+                "severity": "critical",
+                "value": 0.0,
+                "message": f"{appliance} went offline",
+            }
+        return None
