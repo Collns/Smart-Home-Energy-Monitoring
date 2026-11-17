@@ -11,7 +11,7 @@ import ssl
 import paho.mqtt.client as mqtt
 
 from adx_writer import AdxWriter
-from alerts import ThresholdTracker
+from alerts import StatusTracker, ThresholdTracker
 from anomaly.detector import AnomalyDetector
 from cleaning import parse_reading
 
@@ -24,6 +24,7 @@ PASSWORD = os.getenv("PROCESSOR_PASSWORD")
 
 writer = AdxWriter()
 thresholds = ThresholdTracker()
+statuses = StatusTracker()
 detector = AnomalyDetector()
 stats = {"ok": 0, "dropped": 0}
 
@@ -41,8 +42,11 @@ def on_connect(client, userdata, flags, reason_code, properties):
 
 def on_message(client, userdata, msg):
     if msg.topic.endswith("/status"):
-        print(f"device status {msg.topic} = {msg.payload.decode(errors='replace')}")
-        # TODO Part 2: raise an alert when a device goes offline
+        status = msg.payload.decode(errors="replace")
+        print(f"device status {msg.topic} = {status}")
+        alert = statuses.check(msg.topic, status)
+        if alert:
+            publish_alert(client, alert)
         return
 
     r = parse_reading(msg.topic, msg.payload)

@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from alerts import ThresholdTracker
+from alerts import StatusTracker, ThresholdTracker
 
 
 def reading(minutes, watts):
@@ -22,3 +22,27 @@ def test_resets_when_below():
     t.check(reading(0, 2100))
     t.check(reading(20, 1500))
     assert t.check(reading(31, 2100)) is None
+
+STATUS = "home/kitchen/refrigerator/status"
+
+
+def test_offline_fires_alert():
+    alert = StatusTracker().check(STATUS, "offline")
+    assert alert["type"] == "offline" and alert["appliance"] == "refrigerator"
+
+
+def test_offline_not_repeated():
+    s = StatusTracker()
+    assert s.check(STATUS, "offline")
+    assert s.check(STATUS, "offline") is None         # retained / duplicate message
+
+
+def test_fires_again_after_coming_back_online():
+    s = StatusTracker()
+    s.check(STATUS, "offline")
+    assert s.check(STATUS, "online") is None
+    assert s.check(STATUS, "offline")
+
+
+def test_garbage_status_ignored():
+    assert StatusTracker().check(STATUS, "banana") is None
