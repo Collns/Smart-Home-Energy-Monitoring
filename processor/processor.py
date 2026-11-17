@@ -14,6 +14,7 @@ from adx_writer import AdxWriter
 from alerts import StatusTracker, ThresholdTracker
 from anomaly.detector import AnomalyDetector
 from cleaning import GapFiller, parse_reading
+from daily import DailyEnergy
 
 HOST = os.getenv("MQTT_HOST", "localhost")
 PORT = int(os.getenv("MQTT_PORT", "1883"))
@@ -29,6 +30,7 @@ thresholds = ThresholdTracker()
 statuses = StatusTracker()
 detector = AnomalyDetector()
 gaps = GapFiller()
+daily = DailyEnergy()
 stats = {"ok": 0, "dropped": 0}
 
 
@@ -62,10 +64,12 @@ def on_message(client, userdata, msg):
 
     if stats["ok"] % 100 == 0:
         print(f"processed={stats['ok']} dropped={stats['dropped']} {gaps.stats}")
+        print(f"kWh today: {daily.today()}")
 
 
 def handle_reading(client, r):
     writer.write("PowerRaw", r)
+    daily.add(r)
     alert = thresholds.check(r)
     if alert:
         publish_alert(client, alert)
