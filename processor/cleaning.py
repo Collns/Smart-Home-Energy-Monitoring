@@ -47,5 +47,50 @@ def parse_reading(topic: str, payload: bytes):
     return r
 
 
-# TODO Part 2: gap filling – track last seq per device; if a short gap (<= 3 readings)
-# is detected, forward-fill / interpolate before aggregating.
+class GapFiller:
+    """Uses seq numbers per device to drop duplicates and fill short gaps.
+
+    process(r) returns the readings to pass on (oldest first):
+      - []                 duplicate (same seq again, e.g. a QoS 1 redelivery)
+      - [r]                normal reading, a seq reset, or a gap too long to fill
+      - [f1, ..., fn, r]   1..MAX_GAP missing readings filled by linear
+                           interpolation, each marked "filled": True
+    """
+
+    MAX_GAP = 3
+
+    def __init__(self):
+        self.last = {}                       # device_id -> last real reading
+        self.stats = {"filled": 0, "duplicates": 0, "long_gaps": 0}
+
+    def process(self, r):
+        dev = r["device_id"]
+        prev = self.last.get(dev)
+        if prev is not None and r["seq"] == prev["seq"]:
+            self.stats["duplicates"] += 1
+            return []
+        self.last[dev] = r
+        # first reading, or seq went backwards (device/simulator restarted)
+        if prev is None or r["seq"] < prev["seq"]:
+            return [r]
+
+        missing = r["seq"] - prev["seq"] - 1
+        if missing == 0:
+            return [r]
+        if missing > self.MAX_GAP:
+            self.stats["long_gaps"] += 1
+            print(f"gap of {missing} readings on {dev} (seq {prev['seq']}..{r['seq']}), not filled")
+            return [r]
+
+        filled = []
+        for i in range(1, missing + 1):
+            f = i / (missing + 1)
+            row = {k: r[k] for k in ("device_id", "room", "appliance")}
+            row["seq"] = prev["seq"] + i
+            row["ts"] = prev["ts"] + (r["ts"] - prev["ts"]) * f
+            for k in ("power_w", "voltage_v", "current_a"):
+                row[k] = round(prev[k] + (r[k] - prev[k]) * f, 2)
+            row["filled"] = True
+            filled.append(row)
+        self.stats["filled"] += missing
+        return filled + [r]

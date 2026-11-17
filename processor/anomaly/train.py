@@ -22,6 +22,8 @@ MODEL_DIR = os.path.join(os.path.dirname(__file__), "models")
 def main(path):
     df = pd.read_json(path, lines=True) if path.endswith(".jsonl") else pd.read_csv(path)
     df["ts"] = pd.to_datetime(df["ts"])
+    if "filled" in df:                       # train on real readings only
+        df = df[df["filled"] != True]  # noqa: E712
     for appliance, g in df.sort_values("ts").groupby("appliance"):
         X = features_from_frame(g)
         model = IsolationForest(n_estimators=200, contamination=0.01, random_state=42)
