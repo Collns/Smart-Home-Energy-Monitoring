@@ -1,0 +1,21 @@
+
+# Local credentials and environments
+.env
+.env.*
+!.env.example
+.venv/
+
+# Python-generated files
+__pycache__/
+*.py[cod]
+
+# Generated simulation data
+data/buffer_*.jsonl
+data/injected_faults.csv
+data/mqtt_outbox.sqlite3*
+
+# MQTT private credentials
+mosquitto/config/passwd
+mosquitto/config/server.key
+mosquitto/private/
+mosquitto/certs/*.key
