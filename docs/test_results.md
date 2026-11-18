@@ -117,12 +117,34 @@ is at 88–100 %. See notes for the water heater.
 
 ## 5. Alert timing
 
-**Method:** force a threshold breach (e.g. AC fault) and measure time from the breach point to the alert on `home/alerts`.
+**Method:** `python tests/alert_timing_test.py --runs 3 --markdown` (simulator stopped, monitor account set up).
+The script acts as each appliance's plug and sends readings above its shortest threshold rule. Readings carry
+timestamps 5 s apart but are sent quickly, so even the 1-h water-heater rule is reached in seconds. The clock
+starts when the reading that completes the rule is sent and stops when the alert arrives on `home/alerts`:
+plug → Mosquitto (TLS) → processor → Mosquitto → subscriber, all measured with one clock on the same machine.
+Writing the alert to the ADX `Alerts` table happens in parallel (flushed every `ADX_FLUSH_S` = 1 s) and is not
+part of this delay.
 
-| Run | Breach time | Alert received | Delay |
-|-----|-------------|----------------|-------|
-| 1 | | | |
-| 2 | | | |
-| 3 | | | |
+| Run | Appliance | Rule | Alert delay |
+|---|---|---|---|
+| 1 | air_conditioner | > 2000 W for 30 min | 0.009 s |
+| 2 | air_conditioner | > 2000 W for 30 min | 0.050 s |
+| 3 | air_conditioner | > 2000 W for 30 min | 0.009 s |
+| 4 | refrigerator | > 100 W for 20 min | 0.052 s |
+| 5 | refrigerator | > 100 W for 20 min | 0.012 s |
+| 6 | refrigerator | > 100 W for 20 min | 0.009 s |
+| 7 | microwave | > 900 W for 10 min | 0.053 s |
+| 8 | microwave | > 900 W for 10 min | 0.009 s |
+| 9 | microwave | > 900 W for 10 min | 0.014 s |
+| 10 | washing_machine | > 1000 W for 5 min | 0.009 s |
+| 11 | washing_machine | > 1000 W for 5 min | 0.010 s |
+| 12 | washing_machine | > 1000 W for 5 min | 0.009 s |
+| 13 | water_heater | > 4000 W for 1 h | 0.008 s |
+| 14 | water_heater | > 4000 W for 1 h | 0.011 s |
+| 15 | water_heater | > 4000 W for 1 h | 0.009 s |
+| 16 | television | > 250 W for 5 min | 0.007 s |
+| 17 | television | > 250 W for 5 min | 0.011 s |
+| 18 | television | > 250 W for 5 min | 0.010 s |
 
-**Notes:**
+**Summary:** p50 0.010 s · p95 0.053 s · max 0.053 s -> PASS (target < 10 s)
+**Notes:** Development check (local Mosquitto without TLS, same ACLs, Nov 18): 12/12 alerts, max 0.03 s.
