@@ -78,7 +78,10 @@ class StatusTracker:
     def __init__(self):
         self.last = {}             # appliance -> "online" / "offline"
 
-    def check(self, topic, payload, now=None):
+    def check(self, topic, payload, now=None, retained=False):
+        """retained=True: an old status the broker kept from before we connected
+        (MQTT retain flag). We note it but don't alert, otherwise a processor
+        restart re-announces every past offline as if it just happened."""
         parts = topic.split("/")
         if len(parts) != 4:
             return None
@@ -88,6 +91,8 @@ class StatusTracker:
             return None
         prev = self.last.get(appliance)
         self.last[appliance] = status
+        if retained:
+            return None
         if status == "offline" and prev != "offline":
             now = now or datetime.now(timezone.utc)
             return {

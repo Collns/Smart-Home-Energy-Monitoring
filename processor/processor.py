@@ -48,8 +48,8 @@ def on_connect(client, userdata, flags, reason_code, properties):
 def on_message(client, userdata, msg):
     if msg.topic.endswith("/status"):
         status = msg.payload.decode(errors="replace")
-        print(f"device status {msg.topic} = {status}")
-        alert = statuses.check(msg.topic, status)
+        print(f"device status {msg.topic} = {status}" + (" (retained)" if msg.retain else ""))
+        alert = statuses.check(msg.topic, status, retained=msg.retain)
         if alert:
             publish_alert(client, alert)
         return
