@@ -69,9 +69,12 @@ def test_envelope_catches_values_beyond_training_range():
 
 # ---- detector: consecutive rule and hold-off ----
 class FlagAbove:
-    """Fake model: anomalous when power is above 1000 W."""
+    """Fake model: anomalous above 1000 W; below 3000 W it shows no sign of a new fault."""
     def predict(self, X):
         return np.array([x[0] > 1000 for x in X])
+
+    def settling_only(self, X):
+        return np.array([x[0] < 3000 for x in X])
 
     def explain(self, x):
         return "test"
@@ -79,7 +82,8 @@ class FlagAbove:
 
 def run_detector(watts):
     d = det.AnomalyDetector.__new__(det.AnomalyDetector)
-    d.models, d.state, d.streak, d.episode_end = {"microwave": FlagAbove()}, FeatureState(), {}, {}
+    d.models, d.state = {"microwave": FlagAbove()}, FeatureState()
+    d.streak, d.alerted, d.episode_end = {}, {}, {}
     alerts = []
     for i, w in enumerate(watts):
         a = d.check({"appliance": "microwave", "ts": T0 + timedelta(seconds=5 * i), "power_w": w})
@@ -94,12 +98,23 @@ def test_alert_after_consecutive_readings_only():
     assert run_detector([2] * 5 + [2000] * (k + 20)) == [5 + k - 1]
 
 
-def test_hold_off_suppresses_repeat_alert_for_same_incident():
+def test_hold_off_only_silences_settling_after_an_incident():
     k = det.CONSECUTIVE
-    gap_short = int(det.HOLD_OFF / timedelta(seconds=5)) // 2
-    gap_long = int(det.HOLD_OFF / timedelta(seconds=5)) + 10
-    assert len(run_detector([2000] * k + [2] * gap_short + [2000] * k)) == 1
-    assert len(run_detector([2000] * k + [2] * gap_long + [2000] * k)) == 2
+    short = int(det.HOLD_OFF / timedelta(seconds=5)) // 2
+    long = int(det.HOLD_OFF / timedelta(seconds=5)) + 10
+    assert len(run_detector([2000] * k + [2] * short + [2000] * k)) == 1   # settling: held off
+    assert len(run_detector([2000] * k + [2] * short + [3500] * k)) == 2   # clear new fault: alerts
+    assert len(run_detector([2000] * k + [2] * long + [2000] * k)) == 2    # after hold-off: alerts
+
+
+def test_settling_only_means_no_power_or_duration_sign():
+    X = normal_week_like()
+    m = ApplianceModel(contamination=0.0001).fit(X)
+    early = X[0].copy()
+    early[FEATURES.index("off_before_min")] = 5            # only "restarted too soon"
+    high = early.copy()
+    high[0] = high[1] = 2400                               # plus far too much power
+    assert m.settling_only([early, high]).tolist() == [True, False]
 
 
 # ---- end to end on simulator profiles (small, ~10 s) ----

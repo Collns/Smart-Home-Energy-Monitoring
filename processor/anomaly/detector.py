@@ -9,10 +9,12 @@ from anomaly.features import FeatureState
 
 MODEL_DIR = os.path.join(os.path.dirname(__file__), "models")
 CONSECUTIVE = 12   # need 12 anomalous readings in a row (1 min) -> fewer false alarms
-# After an alert, the same appliance must look normal for this long before a NEW alert.
-# Stops one incident alerting twice: e.g. when a stuck fridge finally switches off, its
-# normal cycle restarts with a shorter rest than usual, which also looks anomalous.
-HOLD_OFF = timedelta(minutes=30)
+# After an alert episode ends, the appliance's cycle takes a while to settle back into rhythm
+# (e.g. a stuck fridge finally switches off and restarts with a shorter rest than usual).
+# That looks anomalous but is the same incident, so for HOLD_OFF we don't alert on anomalies
+# with no sign of a NEW fault (model.settling_only). Too much power or ON too long still
+# alerts right away, so a new fault soon after the last one is not missed.
+HOLD_OFF = timedelta(minutes=60)
 
 
 def load_models(model_dir=MODEL_DIR):
@@ -31,7 +33,8 @@ class AnomalyDetector:
         print(f"anomaly models loaded: {sorted(self.models) or 'none (ML alerts off)'}")
         self.state = FeatureState()
         self.streak = {}
-        self.episode_end = {}    # appliance -> ts of the last reading in an alert episode
+        self.alerted = {}        # appliance -> alert already sent for the current streak
+        self.episode_end = {}    # appliance -> ts of the last reading in an alerted episode
 
     def check(self, r):
         x = self.state.features(r)            # always update state, even without a model
@@ -41,13 +44,18 @@ class AnomalyDetector:
         a = r["appliance"]
         if not model.predict([x])[0]:
             self.streak[a] = 0
+            self.alerted[a] = False
             return None
         self.streak[a] = self.streak.get(a, 0) + 1
         if self.streak[a] < CONSECUTIVE:
             return None
+        if self.alerted.get(a):               # same episode, already alerted
+            self.episode_end[a] = r["ts"]
+            return None
         last_end = self.episode_end.get(a)
+        if last_end is not None and r["ts"] - last_end <= HOLD_OFF and model.settling_only([x])[0]:
+            return None                       # settling after the last incident; keep watching
+        self.alerted[a] = True
         self.episode_end[a] = r["ts"]
-        if self.streak[a] == CONSECUTIVE and (last_end is None or r["ts"] - last_end > HOLD_OFF):
-            return make_alert(r, "anomaly", "warning",
-                              f"unusual power pattern on {a}: {model.explain(x)}")
-        return None
+        return make_alert(r, "anomaly", "warning",
+                          f"unusual power pattern on {a}: {model.explain(x)}")

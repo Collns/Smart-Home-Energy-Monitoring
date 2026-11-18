@@ -49,6 +49,14 @@ class ApplianceModel:
         """True where a reading is anomalous."""
         return self.reasons(X).any(axis=1)
 
+    def settling_only(self, X):
+        """True where nothing points to a NEW fault: no power or ON-duration feature above
+        normal, only the forest and/or a short rest before switching on. That is what an
+        appliance's cycle looks like while it settles back into rhythm after a fault."""
+        r = self.reasons(X)
+        n_low = len(self.lo_idx)
+        return ~r[:, 1:r.shape[1] - n_low].any(axis=1)
+
     def explain(self, x):
         """Short human-readable reason for one anomalous reading."""
         r = self.reasons([x])[0]

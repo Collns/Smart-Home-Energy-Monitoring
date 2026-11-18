@@ -7,9 +7,9 @@ Predictions, either:
   - recorded: --alerts with the anomaly alerts from a live run (data/buffer_Alerts.jsonl
     when ADX is off, or an export of the Alerts table).
 
-An alert "episode" runs from the moment the detector alerts until readings look
-normal again; like the live detector, anomalies within HOLD_OFF of the previous
-episode extend it instead of raising a new alert. A fault counts as
+An alert "episode" runs from the moment an alert is sent until readings look
+normal again. Anomalies the live detector holds off (settling after an incident) send no
+alert and don't count for anything. A fault counts as
 detected if an episode for that appliance overlaps the fault, from start_ts to
 start_ts + ticks * 5 s + --grace seconds. This way two back-to-back faults covered
 by one ongoing alert both count. An episode that overlaps no fault is a false alarm.
@@ -35,22 +35,31 @@ TICK = pd.to_timedelta(5, unit="s")
 
 
 def replay_alerts(readings, models):
-    """Alert episodes per appliance, using the live detector's rule on batch predictions."""
+    """Alert episodes per appliance: same rules as the live detector, on batch predictions.
+    An episode starts when an alert is SENT and lasts while the readings stay anomalous."""
     rows = []
     for appliance, g in readings.sort_values("ts").groupby("appliance"):
         model = models.get(appliance)
         if model is None:
             continue
-        anomalous = model.predict(features_from_frame(g))
-        streak, ep = 0, None
-        for ts, bad in zip(g["ts"], anomalous):
-            streak = streak + 1 if bad else 0
+        X = features_from_frame(g)
+        anomalous, settling = model.predict(X), model.settling_only(X)
+        streak, alerted, ep = 0, False, None
+        for ts, bad, settling_only in zip(g["ts"], anomalous, settling):
+            if not bad:
+                streak, alerted = 0, False
+                continue
+            streak += 1
             if streak < CONSECUTIVE:
                 continue
-            if streak == CONSECUTIVE and (ep is None or ts - ep["end"] > HOLD_OFF):
-                ep = {"ts": ts, "end": ts, "appliance": appliance}   # new alert
-                rows.append(ep)
-            ep["end"] = ts            # same episode (or within the hold-off): no new alert
+            if alerted:
+                ep["end"] = ts
+                continue
+            if ep is not None and ts - ep["end"] <= HOLD_OFF and settling_only:
+                continue                      # settling after last incident (same as live)
+            alerted = True
+            ep = {"ts": ts, "end": ts, "appliance": appliance}
+            rows.append(ep)
     return pd.DataFrame(rows, columns=["ts", "end", "appliance"])
 
 
@@ -113,8 +122,6 @@ def report(table, markdown=False):
 def load(readings_path, faults_path, alerts_path=None, model_dir=MODEL_DIR):
     readings = pd.read_json(readings_path, lines=True)
     readings["ts"] = pd.to_datetime(readings["ts"], utc=True)
-    if "filled" in readings:
-        readings = readings[readings["filled"] != True]  # noqa: E712
     faults = pd.read_csv(faults_path)
     faults["ticks"] = faults["ticks"].astype("int64")      # also when the file has no faults
     faults["start_ts"] = pd.to_datetime(faults["start_ts"], utc=True)

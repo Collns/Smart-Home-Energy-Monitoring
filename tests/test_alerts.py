@@ -105,3 +105,16 @@ def test_no_false_alarms_on_a_normal_week():
             if a:
                 alerts.append(a)
     assert alerts == []
+
+
+def test_retained_offline_at_startup_does_not_alert():
+    s = StatusTracker()
+    assert s.check(STATUS, "offline", retained=True) is None   # old Last Will from the broker
+    assert s.check(STATUS, "online") is None                   # plug reconnects
+    assert s.check(STATUS, "offline")                          # a real drop still alerts
+
+
+def test_retained_offline_then_live_offline_not_repeated():
+    s = StatusTracker()
+    s.check(STATUS, "offline", retained=True)
+    assert s.check(STATUS, "offline") is None                  # already known to be offline

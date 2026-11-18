@@ -9,7 +9,7 @@
 | End-to-end latency | < 2 s | | | Issaq | |
 | Broker restart | 0 lost readings at QoS 1 | | | Mashal | |
 | Azure outage | 0 lost readings | | | Collins | |
-| Anomaly detection | ≥ 90 % of injected faults, low false alarms | 91 % recall, < 1 false alarm / day (offline) | ✅ offline, live run to do | Collins | Nov 18 |
+| Anomaly detection | ≥ 90 % of injected faults, low false alarms | 87 % live (98 % excl. water heater), 89–91 % offline, ≈ 2 false alarms / day | ⚠️ just below; water heater faults look like normal heating | Collins | Nov 18 |
 | Alert timing | < 10 s after threshold breach | | | Collins | |
 
 ---
@@ -58,35 +58,44 @@
 
 **Model:** one per appliance = Isolation Forest (200 trees, `contamination=0.001`) + learned envelope
 (normal max of power / 1-min mean / ON duration / ON share of 30 min, normal min of rest between ON
-periods, 10 % margin). Alert after 12 anomalous readings in a row (1 min), then 30 min hold-off per
-appliance. See `processor/anomaly/model.py`.
+periods, 10 % margin). Alert after 12 anomalous readings in a row (1 min). For 60 min after an alert,
+anomalies with no sign of a new fault (no power / ON-duration feature above normal) are treated as the
+appliance settling back into rhythm and don't alert. See `processor/anomaly/model.py`, `detector.py`.
 **Training data:** 7 days of normal data from the simulator profiles (`anomaly/generate.py --days 7`, no faults)
-**Method:** `python tests/eval_anomaly.py <readings> <faults>`. A fault counts as detected if an alert episode
-overlaps it (+60 s grace). Every other alert episode is a false alarm.
+**Method:** `python tests/eval_anomaly.py <readings> <faults>` replays the readings through the same rules as
+the live detector. A fault counts as detected only if an alert is sent during it (+60 s grace) or an alert is
+still active when it starts. Every other alert is a false alarm.
 
-### 4a. Offline evaluation (simulator profiles, no MQTT) – Nov 18
+### 4a. Live pipeline run – Nov 18
 
-Test data: `generate.py --days 3 --fault-rate 0.0005 --seed 2` → 137 injected faults (5–30 min each).
+**Setup:** simulator → Mosquitto (TLS, auth) → processor, `SPEED=60`, `FAULT_RATE=0.0005`, `DROP_RATE=0.01`,
+`MALFORMED_RATE=0.005`, `ADX_ENABLED=false`, ~1.2 h real time = 78 h simulated, 313,622 readings, 156 injected faults.
+Readings from the live run, replayed through the final detector (replay checked against the live detector's
+own alerts: same alerts, at most 1–2 readings apart).
 
 | Appliance | Faults injected | Detected | Recall | False alarms / hour |
 |-----------|-----------------|----------|--------|---------------------|
-| air_conditioner | 22 | 22 | 100% | 0.000 |
-| microwave | 21 | 21 | 100% | 0.000 |
-| refrigerator | 22 | 19 | 86% | 0.000 |
-| television | 29 | 29 | 100% | 0.000 |
-| washing_machine | 20 | 20 | 100% | 0.000 |
-| water_heater | 23 | 13 | 57% | 0.000 |
-| **Total** | **137** | **124** | **91%** | **0.000** |
+| air_conditioner | 27 | 27 | 100% | 0.013 |
+| microwave | 26 | 26 | 100% | 0.013 |
+| refrigerator | 24 | 21 | 88% | 0.000 |
+| television | 33 | 33 | 100% | 0.000 |
+| washing_machine | 22 | 22 | 100% | 0.000 |
+| water_heater | 24 | 6 | 25% | 0.063 |
+| **Total** | **156** | **135** | **87%** | **0.089** (≈ 2 / day) |
 
-Checked on data the model never saw:
+Without the water heater: 129 / 132 = **98 %**.
+
+### 4b. Offline evaluation (simulator profiles, no MQTT)
 
 | Data | Faults | Recall | False alarms |
 |------|--------|--------|--------------|
-| 7 days, seed 3 | 333 | 92% | 7 (0.04 / h) |
-| 7 days, seed 4 | 303 | 92% | 12 (0.07 / h) |
+| 3 days, seed 2 | 137 | 89% | 1 (0.01 / h) |
+| 7 days, seed 3 (unseen) | 333 | 91% | 13 (0.08 / h) |
+| 7 days, seed 4 (unseen) | 303 | 91% | 15 (0.09 / h) |
 | 7 normal days, no faults | 0 | – | 6 (0.04 / h, < 1 per day) |
 
-**Result: PASS (≥ 90 %)** offline. Live pipeline run still to do (4b).
+**Result:** 87 % live / 89–91 % offline against the ≥ 90 % target. Every appliance except the water heater
+is at 88–100 %. See notes for the water heater.
 
 **Notes / tuning tried:**
 - Baseline (skeleton features: power, 1-min mean/range, hour; `contamination=0.01`; 6 in a row):
@@ -96,20 +105,15 @@ Checked on data the model never saw:
   highest normal readings and scores as normal. Fix: the learned envelope.
 - Fridge and water heater faults draw the same power as normal use and differ only in **timing**, so ON-duration
   and rest-before-ON features were added.
-- Most remaining false alarms came 4–15 min *after* a real fault ended (the appliance's normal cycle restarts with
-  a short rest) → 30 min hold-off per appliance.
-- **Undetectable faults:** a water heater "stuck on" for 9–21 min after a normal rest looks exactly like a
-  normal heating cycle (normal: 10–20 min). That's all of the water-heater misses. The 3 fridge misses happened
-  while the compressor was already running normally, so the readings didn't change (recall on faults that
-  changed the readings: 100 %).
+- False alarms right after real faults (cycle settling back into rhythm) → hold-off. A first version held off
+  *all* anomalies for 30 min; the live run showed it also silenced new faults arriving soon after the previous
+  one (11 of 33 TV faults missed live). It now only holds off anomalies with no sign of a new fault.
+  Lesson: the first offline scoring counted those faults as caught; scoring is now strict (alert must be sent).
+- **Water heater:** a heater "stuck on" for 5–20 min after a normal rest looks exactly like a normal heating
+  cycle (normal: 10–20 min heating, any time of day), so it can't be told apart from normal use. Only faults
+  that run longer than a normal cycle, or start too soon after one, are detectable. The 3 fridge misses happened
+  while the compressor was already running normally, so the readings didn't change.
 - Detection delay: about 1 min after the fault becomes visible (12 readings in a row).
-
-### 4b. Live pipeline run
-
-**Setup:** simulator `FAULT_RATE=` ___ `SPEED=` ___ for ___ h → processor → `data/buffer_Alerts.jsonl`
-**Method:** `python tests/eval_anomaly.py data/buffer_PowerRaw.jsonl data/injected_faults.csv --alerts data/buffer_Alerts.jsonl --markdown`
-
-(paste table here)
 
 ## 5. Alert timing
 
