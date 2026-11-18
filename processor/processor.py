@@ -11,9 +11,10 @@ import ssl
 import paho.mqtt.client as mqtt
 
 from adx_writer import AdxWriter
-from alerts import ThresholdTracker
+from alerts import StatusTracker, ThresholdTracker
 from anomaly.detector import AnomalyDetector
-from cleaning import parse_reading
+from cleaning import GapFiller, parse_reading
+from daily import DailyEnergy
 
 HOST = os.getenv("MQTT_HOST", "localhost")
 PORT = int(os.getenv("MQTT_PORT", "1883"))
@@ -21,10 +22,15 @@ USE_TLS = os.getenv("MQTT_TLS", "false").lower() == "true"
 CA_CERT = os.getenv("MQTT_CA_CERT", "/certs/ca.crt")
 USER = os.getenv("PROCESSOR_USER")
 PASSWORD = os.getenv("PROCESSOR_PASSWORD")
+# Turn off for the broker-restart / Azure-outage tests, so lost readings are not hidden
+GAP_FILL = os.getenv("GAP_FILL", "true").lower() == "true"
 
 writer = AdxWriter()
 thresholds = ThresholdTracker()
+statuses = StatusTracker()
 detector = AnomalyDetector()
+gaps = GapFiller()
+daily = DailyEnergy()
 stats = {"ok": 0, "dropped": 0}
 
 
@@ -41,8 +47,11 @@ def on_connect(client, userdata, flags, reason_code, properties):
 
 def on_message(client, userdata, msg):
     if msg.topic.endswith("/status"):
-        print(f"device status {msg.topic} = {msg.payload.decode(errors='replace')}")
-        # TODO Part 2: raise an alert when a device goes offline
+        status = msg.payload.decode(errors="replace")
+        print(f"device status {msg.topic} = {status}")
+        alert = statuses.check(msg.topic, status)
+        if alert:
+            publish_alert(client, alert)
         return
 
     r = parse_reading(msg.topic, msg.payload)
@@ -50,17 +59,23 @@ def on_message(client, userdata, msg):
         stats["dropped"] += 1
         return
     stats["ok"] += 1
-    writer.write("PowerRaw", r)
+    for reading in (gaps.process(r) if GAP_FILL else [r]):
+        handle_reading(client, reading)
 
+    if stats["ok"] % 100 == 0:
+        print(f"processed={stats['ok']} dropped={stats['dropped']} {gaps.stats}")
+        print(f"kWh today: {daily.today()}")
+
+
+def handle_reading(client, r):
+    writer.write("PowerRaw", r)
+    daily.add(r)
     alert = thresholds.check(r)
     if alert:
         publish_alert(client, alert)
     alert = detector.check(r)
     if alert:
         publish_alert(client, alert)
-
-    if stats["ok"] % 100 == 0:
-        print(f"processed={stats['ok']} dropped={stats['dropped']}")
 
 
 def main():

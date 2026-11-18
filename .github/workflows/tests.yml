@@ -30,7 +30,8 @@ jobs:
         run: python -m py_compile simulator/*.py
 
       - name: Run unit tests
-        run: pytest tests/ -v
+        # pytest.ini limits this to tests/test_*.py (no broker or Azure needed)
+        run: pytest -v
 
   docker-build:
     runs-on: ubuntu-latest

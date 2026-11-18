@@ -1,21 +1,29 @@
-
-# Local credentials and environments
+# Secrets - never commit
 .env
 .env.*
 !.env.example
-.venv/
-
-# Python-generated files
-__pycache__/
-*.py[cod]
-
-# Generated simulation data
-data/buffer_*.jsonl
-data/injected_faults.csv
-data/mqtt_outbox.sqlite3*
-
-# MQTT private credentials
 mosquitto/config/passwd
 mosquitto/config/server.key
 mosquitto/private/
-mosquitto/certs/*.key
+mosquitto/certs/*
+!mosquitto/certs/.gitkeep
+
+# Runtime data (buffers, fault log, MQTT outbox, trained models)
+data/*
+!data/.gitkeep
+processor/anomaly/models/*
+!processor/anomaly/models/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# git patches shared during development
+*.patch
