@@ -43,6 +43,13 @@ for appliance in "${appliances[@]}"; do
     printf '%s:%s\n' "$appliance" "${!key}" >> "$plainfile"
 done
 printf '%s:%s\n' "$PROCESSOR_USER" "$PROCESSOR_PASSWORD" >> "$plainfile"
+# Optional read-only "monitor" account (ACL: read home/#) for debugging and the
+# alert-timing test. Only created when MONITOR_PASSWORD is set in .env.
+accounts=7
+if [[ -n "${MONITOR_PASSWORD:-}" ]]; then
+    printf '%s:%s\n' monitor "$MONITOR_PASSWORD" >> "$plainfile"
+    accounts=8
+fi
 
 # -U converts user:plaintext-password lines to Mosquitto password hashes.
 # No passwords are printed or included in Docker command-line arguments.
@@ -55,5 +62,5 @@ docker run --rm \
 chmod 600 "$plainfile"
 mv -f "$plainfile" mosquitto/config/passwd
 chmod 600 mosquitto/config/passwd
-printf 'Updated mosquitto/config/passwd with 7 accounts. No passwords displayed.\n'
+printf 'Updated mosquitto/config/passwd with %s accounts. No passwords displayed.\n' "$accounts"
 printf 'Restart Mosquitto after checking the account names.\n'
