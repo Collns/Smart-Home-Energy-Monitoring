@@ -4,6 +4,7 @@
 apiVersion: 1
 datasources:
   - name: Azure Data Explorer
+    uid: adx
     type: grafana-azure-data-explorer-datasource
     access: proxy
     isDefault: true
