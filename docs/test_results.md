@@ -6,7 +6,7 @@
 
 | Test | Target | Result | Pass? | Owner | Date |
 |------|--------|--------|-------|-------|------|
-| End-to-end latency | < 2 s | | | Issaq | |
+| End-to-end latency | < 2 s | p95 = 1.02 s | ✅ | Issaq | 2026-11-18 |
 | Broker restart | 0 lost readings at QoS 1 | | | Mashal | |
 | Azure outage | 0 lost readings | | | Collins | |
 | Anomaly detection | ≥ 90 % of injected faults, low false alarms | | | Collins | |
@@ -16,8 +16,8 @@
 
 ## 1. End-to-end latency
 
-**Setup:** simulator → broker → processor → ADX (streaming ingestion). `ADX_FLUSH_S=` ___
-**Method:** `ingestion_time() - ts` over ___ minutes (query in `tests/latency_test.py`).
+**Setup:** simulator → broker → processor → ADX (streaming ingestion). `ADX_FLUSH_S=` 1
+**Method:** `ingestion_time() - ts` over 30 minutes (query run in the ADX web UI).
 
 | Metric | Value |
 |--------|-------|
