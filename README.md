@@ -98,9 +98,11 @@ smart-home-energy/
 │   ├── 01_tables.kql         # tables + JSON ingestion mappings
 │   ├── 02_policies.kql       # retention + streaming ingestion
 │   ├── 03_views.kql          # materialized views (1-min avg, hourly kWh)
-│   └── queries/              # KQL used by Grafana panels
+│   ├── 04_security.kql       # grant sp-processor / sp-grafana their ADX roles
+│   └── queries/              # KQL behind every Grafana panel (one file per panel)
 ├── grafana/                  # Part 3
-│   └── provisioning/         # ADX datasource + dashboard JSON
+│   ├── provisioning/         # ADX data source (uid: adx) + dashboard loader
+│   └── dashboards/energy.json # the dashboard, loaded automatically
 ├── tests/                    # latency, broker restart, fault injection
 ├── scripts/gen_certs.sh
 └── docs/                     # architecture, test results, report
@@ -148,7 +150,7 @@ All three parts can be built in parallel **as long as everyone sticks to these f
 |-------------------------|-------------------|-----------|------------------------------------------------------------------|
 | `PowerRaw`              | table             | 30 days   | `ts:datetime, device_id, room, appliance, seq:long, power_w:real, voltage_v:real, current_a:real` |
 | `Power1m`               | materialized view | 365 days  | `bin(ts,1m), room, appliance, avg_w`                             |
-| `EnergyHourly`          | materialized view | 365 days  | `bin(ts,1h), room, appliance, kwh`                               |
+| `EnergyHourly`          | materialized view | 365 days  | `bin(ts,1h), room, appliance, avg_w, samples` (kWh for the hour = `avg_w / 1000`) |
 | `Alerts`                | table             | 365 days  | `ts:datetime, appliance, type, severity, value:real, message`    |
 
 Streaming ingestion is enabled on `PowerRaw` and `Alerts` so data shows up within seconds (the default queued ingestion can take minutes).
@@ -240,10 +242,16 @@ docker compose up -d --build
 
 **One-time Azure setup** (done once by Part 3, then shared):
 
-1. Create an ADX cluster (free tier if limits allow) and a database `SmartHomeEnergy`.
-2. Run `adx/01_tables.kql`, `02_policies.kql`, `03_views.kql` in the ADX web UI.
-3. Create the `sp-processor` and `sp-grafana` app registrations and grant their ADX roles.
-4. Put the cluster URI, tenant ID and client credentials in each member's `.env`.
+1. Create a free ADX cluster at https://aka.ms/kustofree with a database named `SmartHomeEnergy`.
+   (Done in a personal Azure tenant, because the school account cannot create app registrations; see `docs/decisions.md` D-07.)
+2. In the ADX web UI (https://dataexplorer.azure.com), select the `SmartHomeEnergy` database and run `adx/01_tables.kql`, `02_policies.kql`, `03_views.kql` **one command at a time** (cursor inside the command, Shift+Enter).
+3. In Microsoft Entra ID → App registrations, create `sp-processor` and `sp-grafana`, each with a client secret (copy the secret's **Value**, not its Secret ID; it is shown only once).
+4. Run `adx/04_security.kql` with the real client IDs and tenant ID to grant their roles.
+5. Share the cluster URI, tenant ID and the client ID/secret each member needs **privately** (never in Git or group chat); they go in each member's `.env`.
+
+> **Changed `.env`?** Containers only read `.env` when they are created. Recreate the affected service: `docker compose up -d --force-recreate --no-deps processor` (or `grafana`).
+>
+> **Windows: "ports are not available ... 8883 ... access permissions"?** Windows has reserved that port. Change only the host side locally in `docker-compose.yml` (e.g. `"18883:8883"`) and don't commit it; see `docs/decisions.md` D-11.
 
 | Service   | URL / port                  |
 |-----------|-----------------------------|
@@ -257,6 +265,43 @@ Watch the raw stream while debugging:
 mosquitto_sub -h localhost -p 8883 --cafile mosquitto/certs/ca.crt \
   -u monitor -P <password> -t 'home/#' -v
 ```
+
+### Grafana dashboard
+
+The ADX plugin, the data source and the dashboard are all set up automatically when Grafana starts; nothing needs to be created by hand.
+
+1. **Fill in `.env`:** `ADX_CLUSTER_URI`, `AZURE_TENANT_ID`, `ADX_DATABASE=SmartHomeEnergy`, `ADX_GRAFANA_CLIENT_ID`, `ADX_GRAFANA_CLIENT_SECRET` (the read-only `sp-grafana` login) and `GF_ADMIN_PASSWORD`.
+2. **Start it:** `docker compose up -d` (Grafana also installs the `grafana-azure-data-explorer-datasource` plugin on first start).
+3. **Log in** at http://localhost:3000 as `admin` with `GF_ADMIN_PASSWORD`.
+   That password is only applied the first time Grafana creates its database. If you set it later, reset it with:
+   `docker compose exec grafana grafana cli admin reset-admin-password <new-password>`
+4. **Check the connection:** Connections → Data sources → *Azure Data Explorer* → **Save & test**.
+5. **Open the dashboard:** Dashboards → folder *Smart Home Energy* → *SmartHomeEnergy*. Set the time range to *Last 7 days*.
+
+**Panels** (queries in `adx/queries/`, every query uses *Format as: Table*):
+
+| Panel | Type | Query file |
+|-------|------|------------|
+| Live Power per Appliance | Gauge | `live_power.kql` |
+| Total Energy | Stat | `total_energy.kql` |
+| Pipeline Latency p95 | Stat | `latency_p95.kql` |
+| Daily Energy per Appliance (kWh) | Bar chart, stacked | `daily_energy.kql` |
+| Power Over Time (1-min avg) | Time series + *Partition by values* (appliance) | `power_over_time.kql` |
+| Latest alerts | Table | `alerts.kql` |
+| Estimated Cost per Appliance (Ontario TOU) | Bar chart | `tou_cost.kql` |
+| Peak Hours: Avg kWh by Hour of Day | Table, coloured cells | `peak_hours_heatmap.kql` |
+
+**Changing the dashboard:** the dashboard is loaded from `grafana/dashboards/energy.json`, so Grafana won't save edits made in the UI. Edit it in the UI, then *Export → Export as JSON* (leave "sharing externally" off), overwrite `energy.json`, make sure every data source reference is `"uid": "adx"` and the top-level `"id"` is `null`, then run `docker compose up -d --force-recreate --no-deps grafana`. If you change a query, update the matching file in `adx/queries/` too.
+
+**Troubleshooting**
+
+| Symptom | Cause / fix |
+|---------|-------------|
+| Every panel says *No data* right after a client secret was changed | Grafana still has the old secret. Update `.env`, then recreate Grafana (see above). |
+| Only the gauges / latency tile are empty | They only look at the last 2–5 minutes: the pipeline isn't running (`docker compose ps`). |
+| "Data is missing a time field" | Set the query's *Format as* to **Table**. |
+| "Datasource adx was not found" | The dashboard JSON references another data source ID; replace it with `adx`. |
+| Panel shows *No data* but ADX has rows | Check the time range, and run the query in the ADX web UI with `$__timeFilter(ts)` replaced by `ts > ago(7d)`. |
 
 ---
 

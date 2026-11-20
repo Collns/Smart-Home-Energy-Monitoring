@@ -1,0 +1,7 @@
+// Panel: "Power Over Time (1-min avg)"  - Time series, Format as: Table.  OWNER: Part 3
+// Needs the Grafana transformation "Partition by values" on field "appliance"
+// to split the long-format rows into one line per appliance.
+Power1m
+| where $__timeFilter(ts)
+| project ts, appliance, avg_w
+| order by ts asc

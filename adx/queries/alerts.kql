@@ -1,5 +1,7 @@
-// Table panel: latest alerts
+// Panel: "Latest alerts"  - Table, Format as: Table.  OWNER: Part 3
+// Rows are written by the processor (Part 2); empty until an alert fires.
 Alerts
 | where $__timeFilter(ts)
+| project ts, appliance, type, severity, value, message
 | order by ts desc
 | take 50

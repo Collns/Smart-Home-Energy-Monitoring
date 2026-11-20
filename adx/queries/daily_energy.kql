@@ -1,5 +1,10 @@
-// Stacked bar: kWh per appliance per day (use $__timeFilter in Grafana)
+// Panel: "Daily Energy per Appliance (kWh)"  - Bar chart, Format as: Table.  OWNER: Part 3
+// X axis = day (Toronto local date as text), Stacking = Normal, one stacked segment per appliance.
+// An hour at an average of X W uses X Wh, so sum(avg_w) / 1000 = kWh per day.
+// Today's bar runs slightly high: the hour in progress counts as a full hour.
 EnergyHourly
 | where $__timeFilter(ts)
-| summarize kwh = sum(avg_w) / 1000.0 by appliance, day = bin(ts, 1d)
+| extend day = format_datetime(datetime_utc_to_local(ts, "America/Toronto"), "yyyy-MM-dd")
+| summarize kwh = sum(avg_w) / 1000.0 by day, appliance
+| evaluate pivot(appliance, sum(kwh))
 | order by day asc

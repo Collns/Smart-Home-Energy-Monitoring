@@ -1,0 +1,14 @@
+// Grant the two Entra ID app registrations access to the database.  OWNER: Part 3
+// Run in the ADX web UI (dataexplorer.azure.com) on database SmartHomeEnergy, one command at a time,
+// AFTER creating sp-processor and sp-grafana in Microsoft Entra ID > App registrations.
+// Replace the placeholders with each app's "Application (client) ID" and the "Directory (tenant) ID"
+// from its Overview page. Do NOT commit real IDs or secrets.
+// Least privilege: the processor can only write (ingestor), Grafana can only read (viewer).
+// Permissions belong to the client ID, so creating a new client secret later does not require re-running this.
+
+.add database SmartHomeEnergy ingestors ('aadapp=<sp-processor-client-id>;<tenant-id>') 'sp-processor'
+
+.add database SmartHomeEnergy viewers ('aadapp=<sp-grafana-client-id>;<tenant-id>') 'sp-grafana'
+
+// Check: both aadapp=... entries should be listed.
+.show database SmartHomeEnergy principals

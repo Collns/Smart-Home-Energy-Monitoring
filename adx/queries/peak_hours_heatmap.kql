@@ -1,5 +1,11 @@
-// Heatmap: average kWh by hour of day and appliance
+// Panel: "Peak Hours: Avg kWh by Hour of Day"  - Table, Format as: Table.  OWNER: Part 3
+// One row per hour of the day (Toronto local time), one column per appliance.
+// Each cell = that appliance's average kWh in that hour across the selected range.
+// Shown as a heatmap with Cell type = Colored background (gradient, Green-Yellow-Red);
+// the "hour" column has an override (Cell type Auto, Unit Misc > Number).
 EnergyHourly
 | where $__timeFilter(ts)
-| summarize kwh = avg(avg_w) / 1000.0 by hour = hourofday(ts), appliance
+| extend hour = hourofday(datetime_utc_to_local(ts, "America/Toronto"))
+| summarize kwh = avg(avg_w) / 1000.0 by hour, appliance
+| evaluate pivot(appliance, sum(kwh))
 | order by hour asc
