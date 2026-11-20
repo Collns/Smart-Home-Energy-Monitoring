@@ -1,0 +1,4 @@
+// Panel: "Total Energy"  - Stat, Format as: Table, Unit kWh.  OWNER: Part 3
+EnergyHourly
+| where $__timeFilter(ts)
+| summarize kwh = sum(avg_w) / 1000.0

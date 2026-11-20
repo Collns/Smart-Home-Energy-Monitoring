@@ -1,4 +1,6 @@
-// Gauge panel: latest watts per appliance
+// Panel: "Live Power per Appliance"  - Gauge, Format as: Table.  OWNER: Part 3
+// Latest reading per appliance from the last 2 minutes (ignores the dashboard time range).
+// Gauge settings: Value options > Show = All values, Fields = power_w; Unit = Watt; Min 0, Max 2500.
 PowerRaw
 | where ts > ago(2m)
 | summarize arg_max(ts, power_w) by appliance
