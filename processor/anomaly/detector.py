@@ -1,5 +1,6 @@
 """Live anomaly detection with the trained models.  OWNER: Part 2"""
 import os
+from datetime import timedelta
 
 import joblib
 
@@ -7,30 +8,54 @@ from alerts import make_alert
 from anomaly.features import FeatureState
 
 MODEL_DIR = os.path.join(os.path.dirname(__file__), "models")
-CONSECUTIVE = 6    # need 6 anomalous readings in a row (30 s) -> fewer false alarms
+CONSECUTIVE = 12   # need 12 anomalous readings in a row (1 min) -> fewer false alarms
+# After an alert episode ends, the appliance's cycle takes a while to settle back into rhythm
+# (e.g. a stuck fridge finally switches off and restarts with a shorter rest than usual).
+# That looks anomalous but is the same incident, so for HOLD_OFF we don't alert on anomalies
+# with no sign of a NEW fault (model.settling_only). Too much power or ON too long still
+# alerts right away, so a new fault soon after the last one is not missed.
+HOLD_OFF = timedelta(minutes=60)
+
+
+def load_models(model_dir=MODEL_DIR):
+    """{appliance: model} for every <appliance>.joblib in model_dir."""
+    models = {}
+    if os.path.isdir(model_dir):
+        for f in os.listdir(model_dir):
+            if f.endswith(".joblib"):
+                models[f[:-7]] = joblib.load(os.path.join(model_dir, f))
+    return models
 
 
 class AnomalyDetector:
-    def __init__(self):
-        self.models = {}
-        if os.path.isdir(MODEL_DIR):
-            for f in os.listdir(MODEL_DIR):
-                if f.endswith(".joblib"):
-                    self.models[f[:-7]] = joblib.load(os.path.join(MODEL_DIR, f))
+    def __init__(self, model_dir=MODEL_DIR):
+        self.models = load_models(model_dir)
         print(f"anomaly models loaded: {sorted(self.models) or 'none (ML alerts off)'}")
         self.state = FeatureState()
         self.streak = {}
+        self.alerted = {}        # appliance -> alert already sent for the current streak
+        self.episode_end = {}    # appliance -> ts of the last reading in an alerted episode
 
     def check(self, r):
+        x = self.state.features(r)            # always update state, even without a model
         model = self.models.get(r["appliance"])
-        x = self.state.features(r)
         if model is None:
             return None
         a = r["appliance"]
-        if model.predict([x])[0] == -1:
-            self.streak[a] = self.streak.get(a, 0) + 1
-            if self.streak[a] == CONSECUTIVE:
-                return make_alert(r, "anomaly", "warning", f"unusual power pattern on {a}")
-        else:
+        if not model.predict([x])[0]:
             self.streak[a] = 0
-        return None
+            self.alerted[a] = False
+            return None
+        self.streak[a] = self.streak.get(a, 0) + 1
+        if self.streak[a] < CONSECUTIVE:
+            return None
+        if self.alerted.get(a):               # same episode, already alerted
+            self.episode_end[a] = r["ts"]
+            return None
+        last_end = self.episode_end.get(a)
+        if last_end is not None and r["ts"] - last_end <= HOLD_OFF and model.settling_only([x])[0]:
+            return None                       # settling after the last incident; keep watching
+        self.alerted[a] = True
+        self.episode_end[a] = r["ts"]
+        return make_alert(r, "anomaly", "warning",
+                          f"unusual power pattern on {a}: {model.explain(x)}")

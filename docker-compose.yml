@@ -3,7 +3,6 @@ services:
     image: eclipse-mosquitto:2.0.20
     container_name: mosquitto
     ports:
-      - "1883:1883"               # dev only – remove once TLS works
       - "8883:8883"               # TLS
     volumes:
       - ./mosquitto/config:/mosquitto/config

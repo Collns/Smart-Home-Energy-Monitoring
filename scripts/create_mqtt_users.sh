@@ -1,13 +1,66 @@
 #!/usr/bin/env bash
-# Create the Mosquitto password file using the passwords in .env.  OWNER: Part 1
+# Build individual MQTT credentials for Part 1 without printing passwords.
+# Uses Mosquitto's password-file conversion mode (-U) so secrets aren't passed
+# as Docker command-line arguments.
 set -euo pipefail
+
 cd "$(dirname "$0")/.."
+if [[ ! -f .env ]]; then
+    echo "ERROR: Missing .env file" >&2
+    exit 1
+fi
+
+# Load only from the team's local, Git-ignored environment file.
+set -a
+# shellcheck disable=SC1091
 source .env
-PW=mosquitto/config/passwd
-: > "$PW"
-run() { docker run --rm -v "$PWD/mosquitto/config:/m" eclipse-mosquitto:2.0.20 mosquitto_passwd -b /m/passwd "$1" "$2"; }
-for a in refrigerator microwave washing_machine water_heater air_conditioner television; do
-  run "$a" "$PLUG_PASSWORD"          # TODO Part 1: separate password per plug
+set +a
+
+appliances=(refrigerator microwave washing_machine water_heater air_conditioner television)
+for appliance in "${appliances[@]}"; do
+    upper="$(printf '%s' "$appliance" | tr '[:lower:]' '[:upper:]')"
+    key="PLUG_${upper}_PASSWORD"
+    if [[ -z "${!key:-}" ]]; then
+        echo "ERROR: Missing $key in .env" >&2
+        exit 1
+    fi
 done
-run "$PROCESSOR_USER" "$PROCESSOR_PASSWORD"
-echo "Users written to $PW"
+: "${PROCESSOR_PASSWORD:?Missing PROCESSOR_PASSWORD in .env}"
+PROCESSOR_USER="${PROCESSOR_USER:-processor}"
+
+# Build a file in a restricted temporary directory, atomically replacing the
+# active password file only after every password is hashed successfully.
+umask 077
+tmpdir="$(mktemp -d mosquitto/config/.passwd-build.XXXXXX)"
+trap 'rm -rf "$tmpdir"' EXIT
+plainfile="$tmpdir/passwd"
+: > "$plainfile"
+chmod 600 "$plainfile"
+
+for appliance in "${appliances[@]}"; do
+    upper="$(printf '%s' "$appliance" | tr '[:lower:]' '[:upper:]')"
+    key="PLUG_${upper}_PASSWORD"
+    printf '%s:%s\n' "$appliance" "${!key}" >> "$plainfile"
+done
+printf '%s:%s\n' "$PROCESSOR_USER" "$PROCESSOR_PASSWORD" >> "$plainfile"
+# Optional read-only "monitor" account (ACL: read home/#) for debugging and the
+# alert-timing test. Only created when MONITOR_PASSWORD is set in .env.
+accounts=7
+if [[ -n "${MONITOR_PASSWORD:-}" ]]; then
+    printf '%s:%s\n' monitor "$MONITOR_PASSWORD" >> "$plainfile"
+    accounts=8
+fi
+
+# -U converts user:plaintext-password lines to Mosquitto password hashes.
+# No passwords are printed or included in Docker command-line arguments.
+docker run --rm \
+    -v "$PWD/mosquitto/config:/m" \
+    --entrypoint mosquitto_passwd \
+    eclipse-mosquitto:2.0.20 \
+    -U "/m/$(basename "$tmpdir")/passwd"
+
+chmod 600 "$plainfile"
+mv -f "$plainfile" mosquitto/config/passwd
+chmod 600 mosquitto/config/passwd
+printf 'Updated mosquitto/config/passwd with %s accounts. No passwords displayed.\n' "$accounts"
+printf 'Restart Mosquitto after checking the account names.\n'

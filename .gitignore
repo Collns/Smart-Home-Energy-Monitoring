@@ -1,10 +1,14 @@
 # Secrets - never commit
 .env
+.env.*
+!.env.example
 mosquitto/config/passwd
+mosquitto/config/server.key
+mosquitto/private/
 mosquitto/certs/*
 !mosquitto/certs/.gitkeep
 
-# Runtime data
+# Runtime data (buffers, fault log, MQTT outbox, trained models)
 data/*
 !data/.gitkeep
 processor/anomaly/models/*
@@ -12,7 +16,7 @@ processor/anomaly/models/*
 
 # Python
 __pycache__/
-*.pyc
+*.py[cod]
 .pytest_cache/
 .venv/
 
@@ -20,3 +24,6 @@ __pycache__/
 .DS_Store
 .idea/
 .vscode/
+
+# git patches shared during development
+*.patch
