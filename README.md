@@ -235,10 +235,15 @@ Tip: Azure setup and learning KQL take a few days, so Part 2 should not wait on 
 ```bash
 git clone https://github.com/<your-org>/smart-home-energy.git
 cd smart-home-energy
-cp .env.example .env              # MQTT passwords + ADX cluster URI, tenant ID, client IDs/secrets
-./scripts/gen_certs.sh            # creates CA + broker certs for TLS
+cp .env.example .env              # then edit: MQTT passwords, ADX cluster URI, tenant ID, client IDs/secrets
+bash scripts/gen_certs.sh         # creates the local CA + broker certificate for TLS
+bash scripts/create_mqtt_users.sh # hashes the passwords in .env into mosquitto/config/passwd
 docker compose up -d --build
 ```
+
+The broker is **TLS-only with logins**, so all three steps are needed before the first start (`MQTT_TLS=true`, `MQTT_PORT=8883` and the six `PLUG_<APPLIANCE>_PASSWORD` values come pre-filled in `.env.example`). Certificates and the password file are generated per machine and git-ignored, so each member picks their own passwords.
+
+> **Windows:** the two scripts are bash scripts, so run them in **Git Bash** (installed with Git for Windows, which also provides `openssl`), not PowerShell or Command Prompt. Docker Desktop must be running for `create_mqtt_users.sh`. If it reports a mangled path, run it as `MSYS_NO_PATHCONV=1 bash scripts/create_mqtt_users.sh`.
 
 **One-time Azure setup** (done once by Part 3, then shared):
 
