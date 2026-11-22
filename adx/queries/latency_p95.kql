@@ -1,0 +1,9 @@
+// Panel: "Pipeline Latency p95"  - Stat, Format as: Table, Unit seconds.  OWNER: Part 3
+// Device -> ADX latency: ingestion_time() (set by ADX) minus ts (set by the simulator).
+// Success criterion: under 2 s. ts has whole-second resolution, so expect about +/- 1 s noise;
+// negative values mean the Docker host clock and Azure's clock disagree.
+// For the formal test (docs/test_results.md, section 1) run this over 30m with p50/max/count.
+PowerRaw
+| where ts > ago(5m)
+| extend latency_s = (ingestion_time() - ts) / 1s
+| summarize p95_s = percentile(latency_s, 95)

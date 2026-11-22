@@ -1,16 +1,30 @@
-// Estimated cost at Ontario time-of-use prices.
-// TODO Part 3: check current OEB rates and hours (they change every Nov 1)
-// and add the summer schedule + statutory holidays.
-let off_peak = 0.0;   // $/kWh  <- fill in from oeb.ca
-let mid_peak = 0.0;
-let on_peak  = 0.0;
+// Panel: "Estimated Cost per Appliance (Ontario TOU)"  - Bar chart, Format as: Table.  OWNER: Part 3
+//
+// Each hour's kWh is multiplied by the time-of-use price for that hour, then summed per appliance.
+// Prices: Ontario Energy Board Regulated Price Plan, effective Nov 1 2026 (supply price only;
+// delivery, regulatory charges, HST and the Ontario Electricity Rebate are NOT included,
+// so this is an estimate, not a bill). Update the three rates every Nov 1 from oeb.ca.
+//
+// Weekday periods (weekends are off-peak all day):
+//   Winter (Nov-Apr): on-peak 07-11 and 17-19, mid-peak 11-17, off-peak otherwise
+//   Summer (May-Oct): on-peak 11-17, mid-peak 07-11 and 17-19, off-peak otherwise
+// Statutory holidays are not handled: none falls inside the project window (Nov 4 - Dec 1).
+// dayofweek() returns 0d for Sunday and 6d for Saturday.
+let off_peak = 0.091;   // $/kWh
+let mid_peak = 0.146;
+let on_peak  = 0.189;
 EnergyHourly
 | where $__timeFilter(ts)
 | extend local = datetime_utc_to_local(ts, "America/Toronto")
-| extend h = hourofday(local), weekend = dayofweek(local) >= 6d
+| extend h = hourofday(local), m = monthofyear(local), dow = dayofweek(local)
+| extend weekend = dow == 0d or dow == 6d
+| extend winter = m >= 11 or m <= 4
 | extend rate = case(
         weekend, off_peak,
-        h >= 7 and h < 11 or h >= 17 and h < 19, on_peak,   // winter schedule
-        h >= 11 and h < 17, mid_peak,
+        winter and ((h >= 7 and h < 11) or (h >= 17 and h < 19)), on_peak,
+        winter and h >= 11 and h < 17, mid_peak,
+        not(winter) and h >= 11 and h < 17, on_peak,
+        not(winter) and ((h >= 7 and h < 11) or (h >= 17 and h < 19)), mid_peak,
         off_peak)
-| summarize cost = sum(avg_w / 1000.0 * rate) by appliance
+| summarize cost = round(sum(avg_w / 1000.0 * rate), 4) by appliance
+| order by cost desc
