@@ -48,12 +48,16 @@ Template:
 **Decision:** `Power1m` and `EnergyHourly` materialized views instead of computing in Python. `EnergyHourly` stores the hour's average watts (`avg_w`) and reading count (`samples`); kWh is `avg_w / 1000` per hour, computed in the dashboard queries.
 **Consequences:** Less processor code; roll-ups stay correct even if the processor restarts. Raw readings expire after 30 days while the views keep a year, and dashboards read the small views instead of scanning raw data. An hour that is still in progress counts as a full hour, so today's energy reads slightly high until each hour ends.
 
-## D-06: Isolation Forest for anomaly detection
-**Date:** · **Decided by:** Collins
-**Context:** Detect unusual appliance behaviour without labelled training data.
-**Decision:** One Isolation Forest per appliance on features (power, 1-min rolling mean, rolling range, hour of day); alert after 6 consecutive anomalous readings (30 s).
-**Alternatives:** Fixed thresholds only: miss subtle faults. Autoencoder / LSTM: more data and tuning than the timeline allows.
-**Consequences:** Needs a "normal" training week (generated with `SPEED=120`); `contamination` and the consecutive count trade recall against false alarms.
+## D-06: Isolation Forest + learned envelope for anomaly detection
+**Date:** Nov 18, 2026 (final version) · **Decided by:** Collins
+**Context:** Detect unusual appliance behaviour without labelled training data. "Normal" differs per appliance (150 W is normal for a fridge, alarming for a TV), and real homes don't label faults.
+**Decision:** One model per appliance, trained on 7 days of normal data (`processor/anomaly/generate.py --days 7`, no faults):
+- **Isolation Forest** (200 trees, `contamination=0.001`) on 7 features: power, 1-min rolling mean, 1-min rolling range, hour (UTC), minutes continuously ON, share of the last 30 min ON, and rest before switching on. The timing features catch faults that draw normal power (a fridge stuck on draws the same 150 W as a working one).
+- **Learned envelope:** training also records the normal maximum power, 1-min mean, ON duration and ON share, and the normal minimum rest before switching on. Anything more than 10 % outside is flagged. This fixes Isolation Forest's inability to extrapolate (an AC at 2400 W, above everything seen in training, otherwise scores as normal).
+- **Alert rules:** alert after 12 anomalous readings in a row (1 min). For 60 min after an alert, anomalies with no sign of a new fault (no power or ON-duration feature above normal) are treated as the appliance settling back into rhythm and don't alert.
+
+**Alternatives:** Fixed thresholds only: someone has to guess limits per appliance and fault, and they miss unusual combinations inside the normal range (thresholds still run side by side, see `alerts.py`). Supervised classifier: needs many labelled examples of every fault type. Autoencoder / LSTM: more data and tuning than the timeline allows. First version (4 power features, 6 readings in a row, `contamination=0.01`): 81 % recall, 2.1 false alarms / hour, fridge 0 %. A blanket 30-min hold-off on all anomalies: silenced new faults that arrived soon after a previous one (67 % live).
+**Consequences:** 87 % recall live (98 % without the water heater), 89–91 % offline, about 2 false alarms per day; see `docs/test_results.md` §4. Water-heater "stuck on" faults of 5–20 min look the same as a normal heating cycle and can't be told apart. Models must be trained before the processor starts (it loads them at startup); they are git-ignored (~14 MB), so each member trains locally. Numbers were measured on simulated data and would need re-measuring on real plugs.
 
 ## D-07: Host ADX and the app registrations in a personal Azure tenant
 **Date:** Nov 16, 2026 · **Decided by:** Issaq · **Instructor informed:** ☐

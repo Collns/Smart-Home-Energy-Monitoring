@@ -21,12 +21,30 @@
 
 | Metric | Value |
 |--------|-------|
-| p50 | |
-| p95 | |
-| max | |
-| Readings measured | |
+| p50 | _to fill (Issaq)_ |
+| p95 | 1.02 s |
+| max | _to fill (Issaq)_ |
+| Readings measured | _to fill (Issaq)_ |
+
+**Query** (ADX web UI, database `SmartHomeEnergy`, over the 30-minute test window):
+
+```kusto
+PowerRaw
+| where ts > ago(30m)
+| extend latency_s = (ingestion_time() - ts) / 1s
+| summarize p50 = percentile(latency_s, 50), p95 = percentile(latency_s, 95),
+            max_s = max(latency_s), readings = count()
+```
 
 **Notes:**
+- Result: p95 1.02 s against the < 2 s target → **PASS**, including the internet round trip to Azure.
+- What the number covers: plug timestamp (`ts`) → Mosquitto (TLS) → processor (cleaning, alerts, ML) →
+  1-s batch (`ADX_FLUSH_S=1`) → ADX streaming ingestion. Most of the delay is the 1-s batch plus the
+  network call to Azure; the MQTT and processing steps take milliseconds (see the alert-timing test, §5).
+- Not included: the Grafana refresh interval. The dashboard shows the latest value on its next refresh, so
+  what a person sees can lag by up to one refresh interval on top of this.
+- `ingestion_time()` is set by Azure's clock and `ts` by the simulator machine's clock, so a small clock
+  difference between the two is part of the measurement.
 
 ## 2. Broker restart
 
